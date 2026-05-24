@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: streamtrack-db
+    environment:
+      POSTGRES_USER: track_user
+      POSTGRES_PASSWORD: track_password_123
+      POSTGRES_DB: streamtrack
+      TZ: America/Argentina/Buenos_Aires
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Montamos el script SQL para que Postgres lo ejecute automáticamente la primera vez
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - streamtrack-network
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.0
+    container_name: streamtrack-api
+    depends_on:
+      - postgres-db
+    environment:
+      PGRST_DB_URI: postgres://track_user:track_password_123@postgres-db:5432/streamtrack
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: web_anon
+      PGRST_SERVER_PORT: 3000
+      PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3000
+    ports:
+      - "3000:3000"
+    networks:
+      - streamtrack-network
+
+  streamtrack-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: streamtrack-worker
+    depends_on:
+      - postgres-db
+    environment:
+      # Pasamos la cadena de conexión apuntando al nombre del servicio de la BD en la red interna
+      - DB_DSN=postgres://track_user:track_password_123@postgres-db:5432/streamtrack?sslmode=disable
+      # Pasamos tu clave de Google Cloud como variable de entorno
+      - YOUTUBE_API_KEY=ACA_VA_TU_API_KEY_DE_GOOGLE
+    networks:
+      - streamtrack-network
+
+volumes:
+  pgdata:
+
+networks:
+  streamtrack-network:
+    driver: bridge
+    
